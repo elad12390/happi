@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# uv
+uv.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# happi local data
+.happi/
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Ruff
+.ruff_cache/
+
+# pyright
+pyrightconfig.json
+
+# Fixture specs (large files, download via script)
+.bdd/support/fixtures/*.json
+.bdd/support/fixtures/*.yaml
+!.bdd/support/fixtures/README.md
+!.bdd/support/fixtures/download-fixtures.sh
