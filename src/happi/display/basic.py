@@ -108,7 +108,7 @@ def render_success(
         _print_yaml(payload)
         return
 
-    identifier = _extract_primary_id(payload)
+    identifier = extract_primary_id(payload)
     singular = _inflect_engine.singular_noun(cast("inflect.Word", resource))
     resource_label = str(singular) if singular else resource
     console.print(
@@ -262,12 +262,12 @@ def _choose_columns(rows: list[dict[str, Any]], *, wide: bool = False) -> list[s
 
 
 def _card_title(data: dict[str, Any]) -> str:
-    identifier = _extract_primary_id(data)
+    identifier = extract_primary_id(data)
     kind = data.get("type") or data.get("resource") or "Resource"
     return f"{kind} {identifier}" if identifier else str(kind)
 
 
-def _extract_primary_id(payload: object) -> str | None:
+def extract_primary_id(payload: object) -> str | None:
     if isinstance(payload, dict):
         data = cast("dict[str, Any]", payload)
         for key in ("id", "identifier", "slug"):

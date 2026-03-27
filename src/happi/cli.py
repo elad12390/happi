@@ -173,7 +173,7 @@ def redo(
         raise typer.Exit(1)
 
     command_str = str(entry["command"])
-    verb = str(entry.get("verb", ""))
+    verb = entry["verb"] or ""
 
     destructive_verbs = {"delete", "remove", "purge", "destroy", "revoke", "cancel"}
     if verb in destructive_verbs and not yes:

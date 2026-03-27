@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import stat
 from pathlib import Path
 from typing import Any, cast
 
@@ -33,6 +34,7 @@ def save_config(config: dict[str, Any]) -> None:
     home.mkdir(parents=True, exist_ok=True)
     path = config_path()
     path.write_text(yaml.safe_dump(config, sort_keys=False))
+    path.chmod(stat.S_IRUSR | stat.S_IWUSR)  # chmod 600
 
 
 def upsert_profile(name: str, profile: dict[str, Any]) -> dict[str, Any]:
@@ -55,15 +57,7 @@ def list_profiles() -> dict[str, Any]:
     return {}
 
 
-def get_profile(name: str) -> dict[str, Any] | None:
-    profiles = list_profiles()
-    profile = profiles.get(name)
-    if isinstance(profile, dict):
-        return cast("dict[str, Any]", profile)
-    return None
-
-
-def set_config_value(path_expr: str, value: Any) -> None:
+def set_config_value(path_expr: str, value: object) -> None:
     config = load_config()
     current: dict[str, Any] = config
     parts = path_expr.split(".")
@@ -77,7 +71,7 @@ def set_config_value(path_expr: str, value: Any) -> None:
     save_config(config)
 
 
-def get_config_value(path_expr: str) -> Any:
+def get_config_value(path_expr: str) -> object:
     current: object = load_config()
     for part in path_expr.split("."):
         if not isinstance(current, dict) or part not in current:

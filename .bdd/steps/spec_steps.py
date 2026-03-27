@@ -18,7 +18,13 @@ from happi.config.config import config_path
 from happi.spec import loader as spec_loader
 from happi.spec.loader import SpecLoadError, load_spec
 from happi.spec.resources import extract_resources
-from happi.spec.verbs import is_action_verb
+
+_CRUD_VERBS = frozenset({"list", "show", "create", "update", "delete"})
+
+
+def is_action_verb(verb: str) -> bool:
+    return verb not in _CRUD_VERBS
+
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -280,7 +286,7 @@ def _given_remote_checked(ctx: SpecContext, hours: int, tmp_path: Path) -> None:
     load_spec(ctx.remote_spec_url, force_refresh=True)
 
     raw_key = spec_loader._cache_key_for_url(ctx.remote_spec_url)
-    meta_path = spec_loader.CACHE_DIR / "raw" / f"{raw_key}.meta.json"
+    meta_path = spec_loader._cache_dir() / "raw" / f"{raw_key}.meta.json"
     meta = json.loads(meta_path.read_text())
     meta["fetched_at"] = str(time.time() - (hours * 3600))
     meta_path.write_text(json.dumps(meta))

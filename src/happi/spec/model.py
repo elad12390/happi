@@ -14,14 +14,6 @@ def _operation_list() -> list["Operation"]:
     return []
 
 
-def _resource_list() -> list["Resource"]:
-    return []
-
-
-def _relation_list() -> list["Relation"]:
-    return []
-
-
 Verb = Literal["list", "show", "create", "update", "delete"]
 Confidence = Literal["certain", "high", "medium", "configured"]
 RelationType = Literal["belongs-to", "has-many"]
@@ -64,13 +56,3 @@ class Relation:
     relation_type: RelationType
     via: str
     confidence: Confidence
-
-
-@dataclass
-class ResourceModel:
-    title: str
-    version: str
-    base_url: str
-    resources: list[Resource] = field(default_factory=_resource_list)
-    relations: list[Relation] = field(default_factory=_relation_list)
-    spec_hash: str = ""

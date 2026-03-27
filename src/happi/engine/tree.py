@@ -33,10 +33,32 @@ def register_profile_apps(root_app: typer.Typer) -> None:
     profiles = list_profiles()
     for api_name, raw_profile in profiles.items():
         if isinstance(raw_profile, dict):
-            api_app = _build_api_app(api_name, cast("dict[str, Any]", raw_profile))
-            root_app.add_typer(api_app, name=api_name)
-            _log.info("Registered API command group: %s", api_name)
+            try:
+                api_app = _build_api_app(api_name, cast("dict[str, Any]", raw_profile))
+                root_app.add_typer(api_app, name=api_name)
+                _log.info("Registered API command group: %s", api_name)
+            except Exception as exc:
+                _log.debug("Failed to load profile %s: %s", api_name, exc)
+                broken_app = _build_broken_profile_app(api_name, str(exc))
+                root_app.add_typer(broken_app, name=api_name)
     _registered = True
+
+
+def _build_broken_profile_app(api_name: str, error_message: str) -> typer.Typer:
+    app = typer.Typer(
+        help=f"{api_name} (broken — run 'happi configure {api_name}' to repair)",
+        no_args_is_help=False,
+    )
+
+    def broken_callback() -> None:
+        render_error(
+            f"Profile '{api_name}' failed to load",
+            error_message,
+        )
+        raise typer.Exit(1)
+
+    app.callback(invoke_without_command=True)(broken_callback)
+    return app
 
 
 def _build_api_app(api_name: str, profile: dict[str, Any]) -> typer.Typer:
@@ -178,15 +200,6 @@ def _register_operation_command(
     )(run_operation_command)
 
 
-def _api_help_text(api_name: str, resources: list[Resource]) -> str:
-    sample = "\n".join(f"  happi {api_name} {resource.name} --help" for resource in resources[:3])
-    return (
-        f"Choose a resource for {api_name}.\n\n"
-        f"Examples:\n{sample}\n\n"
-        f"Next:\n  happi {api_name} explore"
-    )
-
-
 def _resource_help_text(api_name: str, resource: Resource) -> str:
     examples = "\n".join(
         f"  happi {api_name} {resource.name} {op.verb}" + (" <id>" if op.args else "")
@@ -218,6 +231,15 @@ def _operation_help_text(api_name: str, resource: Resource, operation: Operation
         + (f"Options:\n{flag_preview}\n\n" if flag_preview else "")
         + f"Example:\n  {example}\n\n"
         + f"Next:\n  happi {api_name} {resource.name} {operation.verb}"
+    )
+
+
+def _api_help_text(api_name: str, resources: list[Resource]) -> str:
+    sample = "\n".join(f"  happi {api_name} {resource.name} --help" for resource in resources[:3])
+    return (
+        f"Choose a resource for {api_name}.\n\n"
+        f"Examples:\n{sample}\n\n"
+        f"Next:\n  happi {api_name} explore"
     )
 
 

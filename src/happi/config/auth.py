@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import http.server
 import secrets
 import threading
 import urllib.parse
 import webbrowser
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -22,6 +24,38 @@ _CALLBACK_PORT = 18923
 _REDIRECT_URI = f"http://localhost:{_CALLBACK_PORT}/callback"
 
 
+@dataclass
+class OAuthContext:
+    api_name: str
+    authorize_url: str
+    token_url: str
+    client_id: str
+    state: str
+    code_verifier: str
+    code_challenge: str
+
+
+def _build_oauth_context(
+    api_name: str, authorize_url: str, token_url: str, client_id: str
+) -> OAuthContext:
+    state = secrets.token_urlsafe(32)
+    code_verifier = secrets.token_urlsafe(64)
+    code_challenge = (
+        base64.urlsafe_b64encode(hashlib.sha256(code_verifier.encode()).digest())
+        .rstrip(b"=")
+        .decode("ascii")
+    )
+    return OAuthContext(
+        api_name=api_name,
+        authorize_url=authorize_url,
+        token_url=token_url,
+        client_id=client_id,
+        state=state,
+        code_verifier=code_verifier,
+        code_challenge=code_challenge,
+    )
+
+
 def oauth_login(
     api_name: str,
     *,
@@ -31,36 +65,27 @@ def oauth_login(
     scopes: str = "",
     manual: bool = False,
 ) -> bool:
-    state = secrets.token_urlsafe(32)
-    code_verifier = secrets.token_urlsafe(64)
-    code_challenge = hashlib.sha256(code_verifier.encode()).digest().hex()
+    ctx = _build_oauth_context(api_name, authorize_url, token_url, client_id)
 
     params: dict[str, str] = {
         "response_type": "code",
-        "client_id": client_id,
+        "client_id": ctx.client_id,
         "redirect_uri": _REDIRECT_URI,
-        "state": state,
-        "code_challenge": code_challenge,
+        "state": ctx.state,
+        "code_challenge": ctx.code_challenge,
         "code_challenge_method": "S256",
     }
     if scopes:
         params["scope"] = scopes
 
-    auth_url = f"{authorize_url}?{urllib.parse.urlencode(params)}"
+    auth_url = f"{ctx.authorize_url}?{urllib.parse.urlencode(params)}"
 
     if manual:
-        return _manual_flow(api_name, auth_url, token_url, client_id, code_verifier, state)
-    return _browser_flow(api_name, auth_url, token_url, client_id, code_verifier, state)
+        return _manual_flow(ctx, auth_url)
+    return _browser_flow(ctx, auth_url)
 
 
-def _browser_flow(
-    api_name: str,
-    auth_url: str,
-    token_url: str,
-    client_id: str,
-    code_verifier: str,
-    state: str,
-) -> bool:
+def _browser_flow(ctx: OAuthContext, auth_url: str) -> bool:
     result: dict[str, str] = {}
     error_result: dict[str, str] = {}
 
@@ -68,7 +93,7 @@ def _browser_flow(
         def do_GET(self) -> None:
             parsed = urllib.parse.urlparse(self.path)
             query = dict(urllib.parse.parse_qsl(parsed.query))
-            if query.get("state") != state:
+            if query.get("state") != ctx.state:
                 error_result["error"] = "State mismatch"
                 self.send_response(400)
                 self.end_headers()
@@ -88,11 +113,19 @@ def _browser_flow(
         def log_message(self, format: str, *args: object) -> None:
             return
 
-    server = http.server.HTTPServer(("127.0.0.1", _CALLBACK_PORT), _Handler)
+    try:
+        server = http.server.HTTPServer(("127.0.0.1", _CALLBACK_PORT), _Handler)
+    except OSError as exc:
+        err_console.print(f"[red]✗[/red] Could not start callback server: {exc}")
+        err_console.print()
+        err_console.print("Try manual mode:")
+        err_console.print(f"  happi auth login {ctx.api_name} --manual")
+        return False
+
     thread = threading.Thread(target=server.handle_request, daemon=True)
     thread.start()
 
-    console.print(f"Opening browser for {api_name} login...")
+    console.print(f"Opening browser for {ctx.api_name} login...")
     webbrowser.open(auth_url)
 
     thread.join(timeout=120)
@@ -102,28 +135,20 @@ def _browser_flow(
         err_console.print(f"[red]✗[/red] Login failed: {error_result.get('error', 'unknown')}")
         err_console.print()
         err_console.print("Try manual mode:")
-        err_console.print(f"  happi auth login {api_name} --manual")
+        err_console.print(f"  happi auth login {ctx.api_name} --manual")
         return False
 
     if "code" not in result:
         err_console.print("[red]✗[/red] No authorization code received (timed out)")
         err_console.print()
         err_console.print("Try manual mode:")
-        err_console.print(f"  happi auth login {api_name} --manual")
+        err_console.print(f"  happi auth login {ctx.api_name} --manual")
         return False
 
-    return _exchange_code(api_name, token_url, client_id, result["code"], code_verifier)
+    return _exchange_code(ctx, result["code"])
 
 
-def _manual_flow(
-    api_name: str,
-    auth_url: str,
-    token_url: str,
-    client_id: str,
-    code_verifier: str,
-    state: str,
-) -> bool:
-    _ = state
+def _manual_flow(ctx: OAuthContext, auth_url: str) -> bool:
     console.print("Open this URL in your browser:")
     console.print(f"  {auth_url}")
     console.print()
@@ -131,25 +156,19 @@ def _manual_flow(
     if not code:
         err_console.print("[red]✗[/red] No code provided")
         return False
-    return _exchange_code(api_name, token_url, client_id, code, code_verifier)
+    return _exchange_code(ctx, code)
 
 
-def _exchange_code(
-    api_name: str,
-    token_url: str,
-    client_id: str,
-    code: str,
-    code_verifier: str,
-) -> bool:
+def _exchange_code(ctx: OAuthContext, code: str) -> bool:
     try:
         response = httpx.post(
-            token_url,
+            ctx.token_url,
             data={
                 "grant_type": "authorization_code",
                 "code": code,
                 "redirect_uri": _REDIRECT_URI,
-                "client_id": client_id,
-                "code_verifier": code_verifier,
+                "client_id": ctx.client_id,
+                "code_verifier": ctx.code_verifier,
             },
             timeout=30,
         )
@@ -168,12 +187,13 @@ def _exchange_code(
         if refresh:
             auth_config["refresh_token"] = str(refresh)
 
-        set_config_value(f"apis.{api_name}.auth", auth_config)
-        console.print(f"[green]✓[/green] Logged in to [cyan]{api_name}[/cyan]")
+        set_config_value(f"apis.{ctx.api_name}.auth", auth_config)
+        console.print(f"[green]✓[/green] Logged in to [cyan]{ctx.api_name}[/cyan]")
         return True
     except httpx.HTTPStatusError as e:
         err_console.print(f"[red]✗[/red] Token exchange failed ({e.response.status_code})")
         return False
-    except Exception as e:
+    except httpx.TransportError as e:
+        _log.debug("Transport error during token exchange: %s", e)
         err_console.print(f"[red]✗[/red] Token exchange failed: {e}")
         return False

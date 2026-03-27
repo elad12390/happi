@@ -93,6 +93,12 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 ".bdd/**" = ["T20", "S"]
 
+[tool.pytest.ini_options]
+testpaths = [".bdd"]
+markers = [
+    "wip: Work in progress — scenario not yet wired to step definitions",
+]
+
 [tool.pyright]
 pythonVersion = "3.12"
 typeCheckingMode = "strict"

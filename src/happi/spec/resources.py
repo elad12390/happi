@@ -112,13 +112,15 @@ def _identify_resource_roots(all_paths: set[str]) -> set[str]:
     return roots
 
 
+_ClassifyResult = tuple[str, str, Param | None, bool]
+
+
 def _classify_operation(
     method: str,
     path: str,
     operation: dict[str, Any],
     resource_roots: set[str],
-) -> tuple[str, str, Param | None, bool]:
-    """Classify an operation into resource name, verb, optional parent param, and is_action flag."""
+) -> _ClassifyResult:
     segments = _meaningful_segments(path)
     method = method.lower()
 
@@ -129,80 +131,92 @@ def _classify_operation(
     resource_name = _normalize_resource_name(root)
 
     if len(segments) == 1:
-        verb = _method_to_verb(method, has_id=False)
-        return resource_name, verb, None, False
+        return resource_name, _method_to_verb(method, has_id=False), None, False
 
-    if len(segments) == 2 and _is_param(segments[1]):
-        verb = _method_to_verb(method, has_id=True)
-        return resource_name, verb, None, False
+    if len(segments) == 2:
+        return _classify_two_segments(method, segments, resource_name, resource_roots)
 
-    if len(segments) == 2 and not _is_param(segments[1]):
-        tail = segments[1]
+    if _is_param(segments[1]):
+        return _classify_nested_with_id(method, segments, resource_name, root, resource_roots)
 
-        if tail in resource_roots and _has_item_path(tail, resource_roots, segments):
-            sub_resource_name = _normalize_resource_name(tail)
-            verb = _method_to_verb(method, has_id=False)
-            parent_param = Param(
-                name=_to_flag_name(root),
-                location="path",
-                param_type="string",
-                required=True,
-            )
-            return sub_resource_name, verb, parent_param, False
-
-        verb = _to_kebab(tail)
-        return resource_name, verb, None, True
-
-    if len(segments) >= 3 and _is_param(segments[1]):
-        tail_non_params = [s for s in segments[2:] if not _is_param(s)]
-        if tail_non_params:
-            last_tail = tail_non_params[-1]
-
-            if last_tail in resource_roots:
-                sub_resource_name = _normalize_resource_name(last_tail)
-                has_sub_id = any(
-                    _is_param(s)
-                    for s in segments[segments.index(last_tail) + 1 :]
-                    if segments.index(last_tail) + 1 < len(segments)
-                )
-                verb = _method_to_verb(method, has_id=has_sub_id)
-                parent_param = Param(
-                    name=_to_flag_name(root),
-                    location="path",
-                    param_type="string",
-                    required=True,
-                )
-                return sub_resource_name, verb, parent_param, False
-
-            verb = _to_kebab(last_tail)
-            return resource_name, verb, None, True
-
-        verb = _method_to_verb(method, has_id=True)
-        return resource_name, verb, None, False
-
-    if len(segments) >= 3 and not _is_param(segments[1]):
-        sub = segments[1]
-        if sub in resource_roots:
-            sub_resource_name = _normalize_resource_name(sub)
-            has_sub_id = _is_param(segments[2]) if len(segments) >= 3 else False
-            if has_sub_id and len(segments) >= 4:
-                tail_after = [s for s in segments[3:] if not _is_param(s)]
-                if tail_after:
-                    verb = _to_kebab(tail_after[-1])
-                    return sub_resource_name, verb, None, True
-            verb = _method_to_verb(method, has_id=has_sub_id)
-            return sub_resource_name, verb, None, False
-
-        verb = _to_kebab(sub)
-        return resource_name, verb, None, True
-
-    verb = _method_to_verb(method, has_id=False)
-    return resource_name, verb, None, False
+    return _classify_nested_without_id(method, segments, resource_name, resource_roots)
 
 
-def _has_item_path(segment: str, resource_roots: set[str], _current_segments: list[str]) -> bool:
-    _ = resource_roots
-    return segment in resource_roots
+def _classify_two_segments(
+    method: str,
+    segments: list[str],
+    resource_name: str,
+    resource_roots: set[str],
+) -> _ClassifyResult:
+    tail = segments[1]
+    if _is_param(tail):
+        return resource_name, _method_to_verb(method, has_id=True), None, False
+
+    if tail in resource_roots:
+        parent_param = Param(
+            name=_to_flag_name(segments[0]),
+            location="path",
+            param_type="string",
+            required=True,
+        )
+        return (
+            _normalize_resource_name(tail),
+            _method_to_verb(method, has_id=False),
+            parent_param,
+            False,
+        )
+
+    return resource_name, _to_kebab(tail), None, True
+
+
+def _classify_nested_with_id(
+    method: str,
+    segments: list[str],
+    resource_name: str,
+    root: str,
+    resource_roots: set[str],
+) -> _ClassifyResult:
+    tail_non_params = [s for s in segments[2:] if not _is_param(s)]
+    if not tail_non_params:
+        return resource_name, _method_to_verb(method, has_id=True), None, False
+
+    last_tail = tail_non_params[-1]
+    if last_tail in resource_roots:
+        tail_idx = segments.index(last_tail)
+        has_sub_id = any(_is_param(s) for s in segments[tail_idx + 1 :])
+        parent_param = Param(
+            name=_to_flag_name(root),
+            location="path",
+            param_type="string",
+            required=True,
+        )
+        return (
+            _normalize_resource_name(last_tail),
+            _method_to_verb(method, has_id=has_sub_id),
+            parent_param,
+            False,
+        )
+
+    return resource_name, _to_kebab(last_tail), None, True
+
+
+def _classify_nested_without_id(
+    method: str,
+    segments: list[str],
+    resource_name: str,
+    resource_roots: set[str],
+) -> _ClassifyResult:
+    sub = segments[1]
+    if sub not in resource_roots:
+        return resource_name, _to_kebab(sub), None, True
+
+    sub_resource_name = _normalize_resource_name(sub)
+    has_sub_id = _is_param(segments[2]) if len(segments) >= 3 else False
+    if has_sub_id and len(segments) >= 4:
+        tail_after = [s for s in segments[3:] if not _is_param(s)]
+        if tail_after:
+            return sub_resource_name, _to_kebab(tail_after[-1]), None, True
+    return sub_resource_name, _method_to_verb(method, has_id=has_sub_id), None, False
 
 
 def _meaningful_segments(path: str) -> list[str]:

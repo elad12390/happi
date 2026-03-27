@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 import sys
 from collections import defaultdict
-from typing import TYPE_CHECKING, Any, cast
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
 from happi.display.basic import (
+    extract_primary_id,
     is_destructive,
     render_binary,
     render_card,
@@ -25,6 +27,18 @@ if TYPE_CHECKING:
 _log = get_logger("engine.executor")
 
 
+@dataclass
+class ExecutionContext:
+    api_name: str
+    base_url: str
+    resource_name: str
+    operation: Operation
+    positional: list[str]
+    extras: list[str]
+    command_text: str
+    auth: dict[str, str] | None = None
+
+
 def execute_operation(
     *,
     api_name: str,
@@ -36,90 +50,123 @@ def execute_operation(
     command_text: str,
     auth: dict[str, str] | None = None,
 ) -> int:
-    output_format, quiet, yes, raw_body, filtered_extras = _extract_global_flags(extras)
-    is_tty = sys.stdout.isatty()
-    effective_format = output_format or ("table" if is_tty else "json")
+    ctx = ExecutionContext(
+        api_name=api_name,
+        base_url=base_url,
+        resource_name=resource_name,
+        operation=operation,
+        positional=positional,
+        extras=extras,
+        command_text=command_text,
+        auth=auth,
+    )
+    return _run(ctx)
 
-    resolved_positional = resolve_args(api_name, positional)
-    resolved_extras = resolve_args(api_name, filtered_extras)
 
-    if is_destructive(operation.verb):
+def _run(ctx: ExecutionContext) -> int:
+    output_format, quiet, yes, raw_body, filtered_extras = _extract_global_flags(ctx.extras)
+    effective_format = output_format or ("table" if sys.stdout.isatty() else "json")
+
+    resolved_positional = resolve_args(ctx.api_name, ctx.positional)
+    resolved_extras = resolve_args(ctx.api_name, filtered_extras)
+
+    if is_destructive(ctx.operation.verb):
         identifier = resolved_positional[0] if resolved_positional else "?"
-        if not render_confirm(resource_name, operation.verb, identifier, yes=yes):
+        if not render_confirm(ctx.resource_name, ctx.operation.verb, identifier, yes=yes):
             return 1
 
     try:
-        _log.info("Executing %s %s %s", api_name, resource_name, operation.verb)
-        _log.debug("Positional args: %s", resolved_positional)
-        _log.debug("Extra args: %s", resolved_extras)
-        path = _resolve_path(operation, resolved_positional)
-        query, body = _build_inputs(operation, resolved_extras)
-
-        explicit_body = _resolve_body(raw_body, body)
-        _log.debug("Resolved path: %s", path)
-        _log.debug("Query: %s", query)
-        _log.debug("Body: %s", explicit_body)
-        payload = send_request(
-            base_url=base_url,
-            method=operation.http_method,
-            path=path,
-            query=query if query else None,
-            body=explicit_body,
-            auth=auth,
-        )
-        push(api_name, payload, resource=resource_name, verb=operation.verb)
-        _render_payload(
-            api_name,
-            resource_name,
-            operation,
-            payload,
-            output_format=effective_format,
-            quiet=quiet,
-        )
-        add_history_entry(
-            api_name=api_name,
-            command=command_text,
-            success=True,
-            exit_code=0,
-            resource=resource_name,
-            verb=operation.verb,
-            primary_id=_extract_primary_id(payload),
-            summary=operation.summary or operation.description or operation.path,
-        )
+        payload = _dispatch(ctx, resolved_positional, resolved_extras, raw_body)
+        push(ctx.api_name, payload, resource=ctx.resource_name, verb=ctx.operation.verb)
+        _render_payload(ctx, payload, output_format=effective_format, quiet=quiet)
+        _record_outcome(ctx, success=True, primary_id=extract_primary_id(payload))
         return 0
     except APIError as e:
         render_error(
-            f"{operation.verb.title()} failed ({e.status_code})",
+            f"{ctx.operation.verb.title()} failed ({e.status_code})",
             e.body,
-            api_name=api_name,
-            resource_name=resource_name,
-            verb=operation.verb,
+            api_name=ctx.api_name,
+            resource_name=ctx.resource_name,
+            verb=ctx.operation.verb,
             status_code=e.status_code,
         )
-        add_history_entry(
-            api_name=api_name,
-            command=command_text,
-            success=False,
-            exit_code=1,
-            resource=resource_name,
-            verb=operation.verb,
-            primary_id=None,
-            summary=operation.summary or operation.description or operation.path,
-        )
+        _record_outcome(ctx, success=False, primary_id=None)
         return 1
     except Exception as e:
-        render_error(f"{operation.verb.title()} failed", str(e))
-        add_history_entry(
-            api_name=api_name,
-            command=command_text,
-            success=False,
-            exit_code=1,
-            resource=resource_name,
-            verb=operation.verb,
-            primary_id=None,
-            summary=operation.summary or operation.description or operation.path,
-        )
+        _log.debug("Unexpected error in %s: %s", ctx.operation.verb, e, exc_info=True)
+        render_error(f"{ctx.operation.verb.title()} failed", str(e))
+        _record_outcome(ctx, success=False, primary_id=None)
         return 1
+
+
+def _dispatch(
+    ctx: ExecutionContext,
+    resolved_positional: list[str],
+    resolved_extras: list[str],
+    raw_body: str | None,
+) -> object:
+    _log.info("Executing %s %s %s", ctx.api_name, ctx.resource_name, ctx.operation.verb)
+    _log.debug("Positional args: %s", resolved_positional)
+    _log.debug("Extra args: %s", resolved_extras)
+    path = _resolve_path(ctx.operation, resolved_positional)
+    query, body = _build_inputs(ctx.operation, resolved_extras)
+    explicit_body = _resolve_body(raw_body, body)
+    _log.debug("Resolved path: %s", path)
+    _log.debug("Query: %s", query)
+    _log.debug("Body: %s", explicit_body)
+    return send_request(
+        base_url=ctx.base_url,
+        method=ctx.operation.http_method,
+        path=path,
+        query=query if query else None,
+        body=explicit_body,
+        auth=ctx.auth,
+    )
+
+
+def _record_outcome(ctx: ExecutionContext, *, success: bool, primary_id: str | None) -> None:
+    add_history_entry(
+        api_name=ctx.api_name,
+        command=ctx.command_text,
+        success=success,
+        exit_code=0 if success else 1,
+        resource=ctx.resource_name,
+        verb=ctx.operation.verb,
+        primary_id=primary_id,
+        summary=ctx.operation.summary or ctx.operation.description or ctx.operation.path,
+    )
+
+
+def _render_payload(
+    ctx: ExecutionContext,
+    payload: object,
+    *,
+    output_format: str = "table",
+    quiet: bool = False,
+) -> None:
+    if isinstance(payload, BinaryFile):
+        render_binary(payload)
+        return
+    if ctx.operation.verb == "list":
+        render_table(payload, output_format=output_format, quiet=quiet)
+        return
+    if ctx.operation.verb == "show":
+        render_card(
+            payload,
+            api_name=ctx.api_name,
+            resource_name=ctx.resource_name,
+            output_format=output_format,
+            quiet=quiet,
+        )
+        return
+    render_success(
+        ctx.resource_name,
+        ctx.operation.verb,
+        payload,
+        api_name=ctx.api_name,
+        output_format=output_format,
+        quiet=quiet,
+    )
 
 
 def _extract_global_flags(
@@ -227,47 +274,3 @@ def _parse_extra_flags(extras: list[str]) -> dict[str, Any]:
         else:
             result[key] = values
     return result
-
-
-def _render_payload(
-    api_name: str,
-    resource_name: str,
-    operation: Operation,
-    payload: object,
-    *,
-    output_format: str = "table",
-    quiet: bool = False,
-) -> None:
-    if isinstance(payload, BinaryFile):
-        render_binary(payload)
-        return
-    if operation.verb == "list":
-        render_table(payload, output_format=output_format, quiet=quiet)
-        return
-    if operation.verb == "show":
-        render_card(
-            payload,
-            api_name=api_name,
-            resource_name=resource_name,
-            output_format=output_format,
-            quiet=quiet,
-        )
-        return
-    render_success(
-        resource_name,
-        operation.verb,
-        payload,
-        api_name=api_name,
-        output_format=output_format,
-        quiet=quiet,
-    )
-
-
-def _extract_primary_id(payload: object) -> str | None:
-    if isinstance(payload, dict):
-        typed_payload = cast("dict[str, Any]", payload)
-        for key in ("id", "identifier", "slug"):
-            value = typed_payload.get(key)
-            if value is not None:
-                return str(value)
-    return None

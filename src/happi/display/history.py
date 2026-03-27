@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.table import Table
 
+if TYPE_CHECKING:
+    from happi.engine.history import HistoryEntry
+
 console = Console()
 
 
-def render_history(rows: list[dict[str, Any]]) -> None:
+def render_history(rows: list[HistoryEntry]) -> None:
     if not rows:
         console.print("[dim]No history yet[/dim]")
         return

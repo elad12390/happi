@@ -9,23 +9,28 @@ Feature: Contextual Action Hints
     Given a test API server is running with the Petstore fixture
     And the terminal is interactive (TTY)
 
+  @wip
   Scenario: Hints after create suggest show and update
     When the user runs "happi testapi pet create --name Buddy --status available"
     Then the output contains "↳" followed by "pet show _"
     And the output contains "↳" followed by "pet update _"
 
+  @wip
   Scenario: Hints after list suggest show with index
     When the user runs "happi testapi pet list"
     Then the output contains "↳" followed by "pet show"
 
+  @wip
   Scenario: No hints referencing deleted resource after delete
     When the user runs "happi testapi pet delete 1 --yes"
     Then the output does not contain "↳" followed by "pet show _"
 
+  @wip
   Scenario: Hints hidden in quiet mode
     When the user runs "happi testapi pet create --name Buddy --quiet"
     Then the output does not contain "↳"
 
+  @wip
   Scenario: Hints hidden in non-TTY mode
     Given the terminal is non-interactive (pipe)
     When the user runs "happi testapi pet create --name Buddy"

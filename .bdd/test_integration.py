@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from conftest_integration import run_happi_in_env
+from interactions.cli_helpers import run_happi_in_env
 
 if TYPE_CHECKING:
     from pathlib import Path

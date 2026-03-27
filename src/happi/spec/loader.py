@@ -11,15 +11,18 @@ import prance
 import yaml
 import yaml.nodes
 
+from happi.config.config import happi_home
 from happi.log import get_logger
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-CACHE_DIR = Path.home() / ".happi" / "cache"
 FRESHNESS_SECONDS = 86400
 
 _log = get_logger("spec.loader")
+
+
+def _cache_dir() -> Path:
+    return happi_home() / "cache"
 
 
 class SpecLoadError(Exception):
@@ -141,7 +144,7 @@ def _construct_yaml_value(loader: object, node: object) -> object:
     return typed_loader.construct_scalar(typed_node)
 
 
-def _resolve_refs(spec: dict[str, Any], _source: str) -> dict[str, Any]:
+def _resolve_refs(spec: dict[str, Any], source: str) -> dict[str, Any]:
     try:
         resolver = prance.ResolvingParser(
             spec_string=json.dumps(spec), backend="openapi-spec-validator"
@@ -149,10 +152,13 @@ def _resolve_refs(spec: dict[str, Any], _source: str) -> dict[str, Any]:
         raw_spec: object = getattr(resolver, "specification", None)
         if isinstance(raw_spec, dict):
             return cast("dict[str, Any]", raw_spec)
+        _log.warning("$ref resolver returned non-dict for %s, using unresolved spec", source)
         return spec
-    except (ValueError, OSError, KeyError):
+    except (ValueError, OSError, KeyError) as exc:
+        _log.warning("$ref resolution failed for %s: %s — using unresolved spec", source, exc)
         return spec
-    except Exception:
+    except Exception as exc:
+        _log.warning("$ref resolution failed for %s: %s — using unresolved spec", source, exc)
         return spec
 
 
@@ -161,7 +167,7 @@ def _cache_key_for_url(url: str) -> str:
 
 
 def _read_raw_cache(url: str) -> str | None:
-    cache_dir = CACHE_DIR / "raw"
+    cache_dir = _cache_dir() / "raw"
     key = _cache_key_for_url(url)
     meta_path = cache_dir / f"{key}.meta.json"
     raw_path = cache_dir / f"{key}.raw"
@@ -180,7 +186,7 @@ def _read_raw_cache(url: str) -> str | None:
 
 
 def _write_raw_cache(url: str, content: str) -> None:
-    cache_dir = CACHE_DIR / "raw"
+    cache_dir = _cache_dir() / "raw"
     cache_dir.mkdir(parents=True, exist_ok=True)
     key = _cache_key_for_url(url)
 
@@ -190,7 +196,7 @@ def _write_raw_cache(url: str, content: str) -> None:
 
 
 def _read_cache(content_hash: str) -> dict[str, Any] | None:
-    cache_path = CACHE_DIR / f"{content_hash}.json"
+    cache_path = _cache_dir() / f"{content_hash}.json"
     if not cache_path.exists():
         return None
     try:
@@ -201,6 +207,7 @@ def _read_cache(content_hash: str) -> dict[str, Any] | None:
 
 
 def _write_cache(content_hash: str, parsed: dict[str, Any]) -> None:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache_path = CACHE_DIR / f"{content_hash}.json"
+    cache = _cache_dir()
+    cache.mkdir(parents=True, exist_ok=True)
+    cache_path = cache / f"{content_hash}.json"
     cache_path.write_text(json.dumps(parsed, default=str))

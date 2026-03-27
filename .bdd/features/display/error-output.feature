@@ -8,6 +8,7 @@ Feature: Human-Friendly Error Display
   Background:
     Given a test API server is running with the Petstore fixture
 
+  @wip
   Scenario: 422 validation error shows field problems
     When the user runs "happi testapi pet create" without required fields
     Then the exit code is non-zero
@@ -15,23 +16,27 @@ Feature: Human-Friendly Error Display
     And the output lists missing required fields
     And the output contains a suggestion command
 
+  @wip
   Scenario: 401 shows authentication hint
     Given the API requires authentication
     When the user runs "happi testapi pet list" without auth configured
     Then the output contains "✗" and "Authentication"
     And the output suggests "happi auth set" or "happi auth login"
 
+  @wip
   Scenario: 404 shows not found with search suggestion
     When the user runs "happi testapi pet show 99999"
     Then the output contains "✗" and "not found"
     And the output suggests "pet list"
 
+  @wip
   Scenario: 500 shows server error with debug hint
     Given the API returns a 500 error
     When the user runs the failing command
     Then the output contains "✗" and "Server error"
     And the output contains "Run with --debug"
 
+  @wip
   Scenario: --debug shows raw HTTP request and response
     When the user runs "happi testapi pet show 99999 --debug"
     Then the output contains the HTTP status line

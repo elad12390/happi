@@ -85,7 +85,7 @@ def _coerce_to_id(entry: dict[str, Any]) -> str:
     if isinstance(payload, list):
         typed_list = cast("list[object]", payload)
         count = len(typed_list)
-        msg = f"Last result is a list of {count} items. Use _[0].id or choose a specific row."
+        msg = f"Last result is a list of {count} items. Use 'show <id>' with a specific ID instead."
         raise StackError(msg)
     primary_id = entry.get("primary_id")
     if primary_id is not None:
