@@ -78,8 +78,11 @@ def send_request(
         return _save_binary(response.content, content_type)
 
     if "application/json" in content_type:
-        payload: object = response.json()
-        return payload
+        try:
+            payload: object = response.json()
+            return payload
+        except ValueError:
+            return response.text
 
     return response.text
 
