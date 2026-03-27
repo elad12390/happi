@@ -69,16 +69,20 @@ def _run(ctx: ExecutionContext) -> int:
 
     resolved_positional = resolve_args(ctx.api_name, ctx.positional)
     resolved_extras = resolve_args(ctx.api_name, filtered_extras)
+    identifier = resolved_positional[0] if resolved_positional else ""
 
-    if is_destructive(ctx.operation.verb):
-        identifier = resolved_positional[0] if resolved_positional else "?"
-        if not render_confirm(ctx.resource_name, ctx.operation.verb, identifier, yes=yes):
-            return 1
+    if is_destructive(ctx.operation.verb) and not render_confirm(
+        ctx.resource_name, ctx.operation.verb, identifier or "?", yes=yes
+    ):
+        return 1
 
     try:
         payload = _dispatch(ctx, resolved_positional, resolved_extras, raw_body)
-        push(ctx.api_name, payload, resource=ctx.resource_name, verb=ctx.operation.verb)
-        _render_payload(ctx, payload, output_format=effective_format, quiet=quiet)
+        if payload is not None:
+            push(ctx.api_name, payload, resource=ctx.resource_name, verb=ctx.operation.verb)
+        _render_payload(
+            ctx, payload, output_format=effective_format, quiet=quiet, identifier=identifier
+        )
         _record_outcome(ctx, success=True, primary_id=extract_primary_id(payload))
         return 0
     except APIError as e:
@@ -137,13 +141,34 @@ def _record_outcome(ctx: ExecutionContext, *, success: bool, primary_id: str | N
     )
 
 
+_DESTRUCTIVE_VERBS = frozenset({"delete", "remove", "purge", "destroy", "revoke", "cancel"})
+
+
 def _render_payload(
     ctx: ExecutionContext,
     payload: object,
     *,
     output_format: str = "table",
     quiet: bool = False,
+    identifier: str = "",
 ) -> None:
+    if payload is None or (isinstance(payload, str) and not payload.strip()):
+        success_payload: dict[str, object] = {
+            "ok": True,
+            "resource": ctx.resource_name,
+            "action": ctx.operation.verb,
+        }
+        if identifier:
+            success_payload["id"] = identifier
+        render_success(
+            ctx.resource_name,
+            ctx.operation.verb,
+            success_payload,
+            api_name=ctx.api_name,
+            output_format=output_format,
+            quiet=quiet,
+        )
+        return
     if isinstance(payload, BinaryFile):
         render_binary(payload)
         return

@@ -100,7 +100,8 @@ def test_delete_requires_yes_in_noninteractive(configured_petstore: str) -> None
 
 def test_delete_with_yes_succeeds(configured_petstore: str) -> None:
     r = run_happi_in_env(configured_petstore, "testapi", "pets", "delete", "2", "--yes")
-    assert r.exit_code == 0
+    assert r.exit_code == 0, f"Delete failed (exit {r.exit_code}): {r.stderr}"
+    assert "ok" in r.stdout or "✓" in r.stdout, f"Expected success response, got: {r.stdout}"
 
 
 def test_action_activate(configured_petstore: str) -> None:

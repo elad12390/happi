@@ -172,7 +172,8 @@ class PetstoreHandler(BaseHTTPRequestHandler):
             pet_id = self.path.split("/")[2]
             removed = _PETS.pop(pet_id, None)
             if removed:
-                self._json_response(200, {"deleted": True, "id": int(pet_id)})
+                self.send_response(204)
+                self.end_headers()
             else:
                 self._json_response(404, {"message": "Pet not found"})
             return

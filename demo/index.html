@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>happi - live demo</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            mono: ['JetBrains Mono', 'monospace'],
+            sans: ['Inter', 'sans-serif'],
+          },
+        },
+      },
+    }
+  </script>
+  <style>
+    @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+    @keyframes card-in { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+    @keyframes float { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-4px); } }
+    .pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
+    .card-enter { animation: card-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+    .type-shimmer {
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+      background-size: 200% 100%;
+      animation: shimmer 3s ease-in-out infinite;
+    }
+    .float-slow { animation: float 3s ease-in-out infinite; }
+    .pet-card { transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+    .pet-card:hover { transform: translateY(-6px) scale(1.02); }
+    .scrollbar-hide::-webkit-scrollbar { display: none; }
+    .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-[#0a0a0f] text-white min-h-screen font-sans overflow-hidden">
+
+  <!-- Header -->
+  <header class="border-b border-white/5 bg-[#0a0a0f]/80 backdrop-blur-xl sticky top-0 z-50">
+    <div class="max-w-[1800px] mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <div class="text-2xl font-extrabold tracking-tight">
+          <span class="text-emerald-400">happi</span>
+          <span class="text-white/20 mx-2 font-light">/</span>
+          <span class="text-white/50 font-medium text-lg">petstore</span>
+        </div>
+        <div class="flex items-center gap-2 bg-white/5 rounded-full px-3 py-1.5 text-xs font-mono text-white/40">
+          <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></div>
+          polling live
+        </div>
+      </div>
+      <div class="flex items-center gap-6 text-sm">
+        <div class="flex items-center gap-4 text-white/30 font-mono text-xs">
+          <span id="stats-total" class="tabular-nums">-</span>
+          <span class="text-white/10">|</span>
+          <span id="stats-available" class="text-emerald-400/70 tabular-nums">-</span>
+          <span class="text-white/10">|</span>
+          <span id="stats-pending" class="text-amber-400/70 tabular-nums">-</span>
+          <span class="text-white/10">|</span>
+          <span id="stats-sold" class="text-red-400/70 tabular-nums">-</span>
+        </div>
+        <div id="last-poll" class="text-white/20 font-mono text-xs tabular-nums">--:--:--</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="max-w-[1800px] mx-auto flex h-[calc(100vh-65px)]">
+
+    <!-- Sidebar: Resources + Commands -->
+    <aside class="w-80 border-r border-white/5 flex flex-col shrink-0 overflow-hidden">
+
+      <!-- Resource Map -->
+      <div class="p-5 border-b border-white/5">
+        <h2 class="text-xs font-bold uppercase tracking-widest text-white/30 mb-4">Resources</h2>
+        <div class="space-y-2" id="resource-tree">
+          <div class="resource-item">
+            <div class="flex items-center justify-between px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <span class="font-semibold text-emerald-400 text-sm">pets</span>
+              <span class="text-[10px] font-mono text-emerald-400/50">8 actions</span>
+            </div>
+            <div class="ml-3 mt-1 flex flex-wrap gap-1 px-2">
+              <span class="text-[10px] font-mono text-white/25 bg-white/5 rounded px-1.5 py-0.5">create</span>
+              <span class="text-[10px] font-mono text-white/25 bg-white/5 rounded px-1.5 py-0.5">show</span>
+              <span class="text-[10px] font-mono text-white/25 bg-white/5 rounded px-1.5 py-0.5">update</span>
+              <span class="text-[10px] font-mono text-white/25 bg-white/5 rounded px-1.5 py-0.5">delete</span>
+              <span class="text-[10px] font-mono text-white/25 bg-white/5 rounded px-1.5 py-0.5">find-by-status</span>
+              <span class="text-[10px] font-mono text-white/25 bg-white/5 rounded px-1.5 py-0.5">find-by-tags</span>
+            </div>
+          </div>
+          <div class="resource-item">
+            <div class="flex items-center justify-between px-3 py-2 rounded-lg bg-white/5 border border-white/5">
+              <span class="font-semibold text-white/50 text-sm">orders</span>
+              <span class="text-[10px] font-mono text-white/25">3 actions</span>
+            </div>
+          </div>
+          <div class="resource-item">
+            <div class="flex items-center justify-between px-3 py-2 rounded-lg bg-white/5 border border-white/5">
+              <span class="font-semibold text-white/50 text-sm">users</span>
+              <span class="text-[10px] font-mono text-white/25">7 actions</span>
+            </div>
+          </div>
+          <div class="resource-item">
+            <div class="flex items-center justify-between px-3 py-2 rounded-lg bg-white/5 border border-white/5">
+              <span class="font-semibold text-white/50 text-sm">stores</span>
+              <span class="text-[10px] font-mono text-white/25">1 action</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Relations -->
+      <div class="p-5 border-b border-white/5">
+        <h2 class="text-xs font-bold uppercase tracking-widest text-white/30 mb-3">Relations</h2>
+        <div class="space-y-2 text-xs font-mono">
+          <div class="flex items-center gap-2 text-white/30">
+            <span class="text-white/50">stores</span>
+            <span class="text-emerald-400/50">&rarr;</span>
+            <span class="text-[10px] bg-emerald-500/10 text-emerald-400/60 px-1.5 py-0.5 rounded">has-many</span>
+            <span class="text-emerald-400/50">&rarr;</span>
+            <span class="text-white/50">orders</span>
+          </div>
+          <div class="flex items-center gap-2 text-white/30">
+            <span class="text-white/50">orders</span>
+            <span class="text-blue-400/50">&rarr;</span>
+            <span class="text-[10px] bg-blue-500/10 text-blue-400/60 px-1.5 py-0.5 rounded">belongs-to</span>
+            <span class="text-blue-400/50">&rarr;</span>
+            <span class="text-white/50">pets</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Activity Feed -->
+      <div class="flex-1 p-5 overflow-y-auto scrollbar-hide">
+        <h2 class="text-xs font-bold uppercase tracking-widest text-white/30 mb-3">Activity</h2>
+        <div id="activity-feed" class="space-y-2 text-xs font-mono">
+          <div class="text-white/20 italic">waiting for data...</div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content: Pet Cards -->
+    <main class="flex-1 overflow-y-auto scrollbar-hide p-6">
+
+      <!-- Empty State -->
+      <div id="empty-state" class="flex flex-col items-center justify-center h-full text-center">
+        <div class="text-6xl mb-6 float-slow">&#9889;</div>
+        <h2 class="text-2xl font-bold text-white/20 mb-2">No pets yet</h2>
+        <p class="text-white/10 font-mono text-sm max-w-md">
+          Run <span class="text-emerald-400/50">happi petstore pets create --body '{...}'</span> to add some
+        </p>
+      </div>
+
+      <!-- Pet Grid -->
+      <div id="pet-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 hidden">
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const API = 'https://petstore3.swagger.io/api/v3';
+    const POLL_INTERVAL = 3000;
+
+    // Type → color mapping (Pokémon-inspired)
+    const TYPE_COLORS = {
+      'Electric': { bg: 'rgba(250, 204, 21, 0.08)', border: 'rgba(250, 204, 21, 0.25)', text: '#facc15', badge: 'bg-yellow-500/20 text-yellow-300' },
+      'Fire':     { bg: 'rgba(239, 68, 68, 0.08)',  border: 'rgba(239, 68, 68, 0.25)',  text: '#ef4444', badge: 'bg-red-500/20 text-red-300' },
+      'Water':    { bg: 'rgba(59, 130, 246, 0.08)',  border: 'rgba(59, 130, 246, 0.25)', text: '#3b82f6', badge: 'bg-blue-500/20 text-blue-300' },
+      'Grass':    { bg: 'rgba(34, 197, 94, 0.08)',   border: 'rgba(34, 197, 94, 0.25)',  text: '#22c55e', badge: 'bg-green-500/20 text-green-300' },
+      'Psychic':  { bg: 'rgba(168, 85, 247, 0.08)',  border: 'rgba(168, 85, 247, 0.25)', text: '#a855f7', badge: 'bg-purple-500/20 text-purple-300' },
+      'Ghost':    { bg: 'rgba(139, 92, 246, 0.08)',  border: 'rgba(139, 92, 246, 0.25)', text: '#8b5cf6', badge: 'bg-violet-500/20 text-violet-300' },
+      'Normal':   { bg: 'rgba(163, 163, 163, 0.08)', border: 'rgba(163, 163, 163, 0.25)', text: '#a3a3a3', badge: 'bg-neutral-500/20 text-neutral-300' },
+      'Dragon':   { bg: 'rgba(99, 102, 241, 0.08)',  border: 'rgba(99, 102, 241, 0.25)', text: '#6366f1', badge: 'bg-indigo-500/20 text-indigo-300' },
+      'Ice':      { bg: 'rgba(34, 211, 238, 0.08)',  border: 'rgba(34, 211, 238, 0.25)', text: '#22d3ee', badge: 'bg-cyan-500/20 text-cyan-300' },
+      'Dark':     { bg: 'rgba(64, 64, 64, 0.12)',    border: 'rgba(64, 64, 64, 0.3)',    text: '#737373', badge: 'bg-neutral-600/20 text-neutral-400' },
+      'Fighting': { bg: 'rgba(220, 38, 38, 0.08)',   border: 'rgba(220, 38, 38, 0.25)',  text: '#dc2626', badge: 'bg-red-600/20 text-red-400' },
+    };
+
+    const DEFAULT_COLOR = { bg: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.08)', text: '#a3a3a3', badge: 'bg-white/10 text-white/50' };
+
+    const STATUS_STYLE = {
+      'available': { dot: 'bg-emerald-400', text: 'text-emerald-400', label: 'available' },
+      'pending':   { dot: 'bg-amber-400',   text: 'text-amber-400',  label: 'pending' },
+      'sold':      { dot: 'bg-red-400',     text: 'text-red-400',    label: 'sold' },
+    };
+
+    const KNOWN_TYPES = new Set(Object.keys(TYPE_COLORS));
+
+    let knownPetIds = new Set();
+    let allPets = new Map();
+
+    function getTypeColor(categoryName) {
+      if (!categoryName) return DEFAULT_COLOR;
+      return TYPE_COLORS[categoryName] || DEFAULT_COLOR;
+    }
+
+    function getStatusStyle(status) {
+      return STATUS_STYLE[status] || STATUS_STYLE['available'];
+    }
+
+    function formatId(id) {
+      return '#' + String(id).padStart(3, '0');
+    }
+
+    function createPetCard(pet, isNew = false) {
+      const type = getTypeColor(pet.category?.name);
+      const status = getStatusStyle(pet.status);
+      const tags = (pet.tags || []).filter(t => t.name && t.name !== 'string');
+
+      const card = document.createElement('div');
+      card.className = `pet-card rounded-2xl p-5 relative overflow-hidden ${isNew ? 'card-enter' : ''}`;
+      card.style.cssText = `background: ${type.bg}; border: 1px solid ${type.border};`;
+      card.dataset.petId = pet.id;
+
+      card.innerHTML = `
+        <div class="type-shimmer absolute inset-0 rounded-2xl pointer-events-none"></div>
+        <div class="relative">
+          <div class="flex items-start justify-between mb-4">
+            <div>
+              <div class="font-mono text-xs tracking-wider mb-1" style="color: ${type.text}40">${formatId(pet.id)}</div>
+              <h3 class="text-xl font-bold" style="color: ${type.text}">${pet.name || 'Unknown'}</h3>
+            </div>
+            <div class="flex items-center gap-1.5 text-[10px] font-mono ${status.text}">
+              <div class="w-1.5 h-1.5 rounded-full ${status.dot} ${pet.status === 'available' ? 'pulse-dot' : ''}"></div>
+              ${status.label}
+            </div>
+          </div>
+
+          ${pet.category?.name ? `
+            <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold ${type.badge} mb-3">
+              ${pet.category.name}
+            </div>
+          ` : ''}
+
+          ${tags.length > 0 ? `
+            <div class="flex flex-wrap gap-1.5 mt-2">
+              ${tags.map(t => `
+                <span class="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/5 text-white/30">${t.name}</span>
+              `).join('')}
+            </div>
+          ` : ''}
+        </div>
+      `;
+
+      return card;
+    }
+
+    function addActivity(message, type = 'info') {
+      const feed = document.getElementById('activity-feed');
+      const colors = { info: 'text-white/30', add: 'text-emerald-400/70', remove: 'text-red-400/70', change: 'text-amber-400/70' };
+
+      // Remove the "waiting" message
+      const waiting = feed.querySelector('.italic');
+      if (waiting) waiting.remove();
+
+      const entry = document.createElement('div');
+      entry.className = `${colors[type] || colors.info} card-enter`;
+
+      const now = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      entry.innerHTML = `<span class="text-white/15">${now}</span> ${message}`;
+
+      feed.insertBefore(entry, feed.firstChild);
+
+      // Keep max 50 entries
+      while (feed.children.length > 50) {
+        feed.removeChild(feed.lastChild);
+      }
+    }
+
+    function updateStats() {
+      const pets = Array.from(allPets.values());
+      const available = pets.filter(p => p.status === 'available').length;
+      const pending = pets.filter(p => p.status === 'pending').length;
+      const sold = pets.filter(p => p.status === 'sold').length;
+
+      document.getElementById('stats-total').textContent = `${pets.length} total`;
+      document.getElementById('stats-available').textContent = `${available} available`;
+      document.getElementById('stats-pending').textContent = `${pending} pending`;
+      document.getElementById('stats-sold').textContent = `${sold} sold`;
+    }
+
+    function renderGrid() {
+      const grid = document.getElementById('pet-grid');
+      const empty = document.getElementById('empty-state');
+
+      if (allPets.size === 0) {
+        grid.classList.add('hidden');
+        empty.classList.remove('hidden');
+        return;
+      }
+
+      empty.classList.add('hidden');
+      grid.classList.remove('hidden');
+
+      // Sort: available first, then pending, then sold. By ID within each group.
+      const sorted = Array.from(allPets.values()).sort((a, b) => {
+        const order = { available: 0, pending: 1, sold: 2 };
+        const statusDiff = (order[a.status] ?? 3) - (order[b.status] ?? 3);
+        if (statusDiff !== 0) return statusDiff;
+        return (a.id || 0) - (b.id || 0);
+      });
+
+      // Determine which are new
+      const currentIds = new Set(sorted.map(p => p.id));
+      const existingCards = new Map();
+      grid.querySelectorAll('[data-pet-id]').forEach(card => {
+        existingCards.set(Number(card.dataset.petId), card);
+      });
+
+      // Remove cards for pets that no longer exist
+      existingCards.forEach((card, id) => {
+        if (!currentIds.has(id)) {
+          card.style.opacity = '0';
+          card.style.transform = 'scale(0.9)';
+          setTimeout(() => card.remove(), 300);
+        }
+      });
+
+      // Build new grid
+      const fragment = document.createDocumentFragment();
+      sorted.forEach(pet => {
+        const isNew = !knownPetIds.has(pet.id);
+        const card = createPetCard(pet, isNew);
+        fragment.appendChild(card);
+      });
+
+      // Replace grid content
+      // Small delay to let removals animate
+      setTimeout(() => {
+        grid.innerHTML = '';
+        grid.appendChild(fragment);
+      }, existingCards.size > 0 ? 50 : 0);
+    }
+
+    async function fetchPets() {
+      try {
+        const statuses = ['available', 'pending', 'sold'];
+        const results = await Promise.all(
+          statuses.map(s =>
+            fetch(`${API}/pet/findByStatus?status=${s}`)
+              .then(r => r.ok ? r.json() : [])
+              .catch(() => [])
+          )
+        );
+
+        const newPets = new Map();
+        for (const pet of results.flat()) {
+          if (pet && pet.id != null && pet.category?.name && KNOWN_TYPES.has(pet.category.name)) {
+            newPets.set(pet.id, pet);
+          }
+        }
+
+        // Detect changes
+        const added = [];
+        const removed = [];
+        const changed = [];
+
+        newPets.forEach((pet, id) => {
+          if (!allPets.has(id)) {
+            added.push(pet);
+          } else {
+            const old = allPets.get(id);
+            if (old.name !== pet.name || old.status !== pet.status) {
+              changed.push(pet);
+            }
+          }
+        });
+
+        allPets.forEach((pet, id) => {
+          if (!newPets.has(id)) {
+            removed.push(pet);
+          }
+        });
+
+        for (const p of added) addActivity(`+ <b>${p.name || p.id}</b> appeared`, 'add');
+        for (const p of removed) addActivity(`- <b>${p.name || p.id}</b> removed`, 'remove');
+        for (const p of changed) addActivity(`~ <b>${p.name || p.id}</b> updated`, 'change');
+
+        // Update state
+        const prevIds = knownPetIds;
+        knownPetIds = new Set(newPets.keys());
+        allPets = newPets;
+
+        updateStats();
+        renderGrid();
+
+        // Update timestamp
+        const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+        document.getElementById('last-poll').textContent = now;
+
+      } catch (err) {
+        console.error('Poll failed:', err);
+      }
+    }
+
+    // Initial fetch + start polling
+    fetchPets();
+    setInterval(fetchPets, POLL_INTERVAL);
+  </script>
+</body>
+</html>

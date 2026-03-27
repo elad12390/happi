@@ -70,6 +70,9 @@ def send_request(
             error_body = response.text
         raise APIError(response.status_code, error_body)
 
+    if response.status_code == 204 or not response.content:
+        return None
+
     content_type = response.headers.get("content-type", "")
     if _is_binary(content_type):
         return _save_binary(response.content, content_type)
