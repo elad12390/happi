@@ -567,3 +567,41 @@ def test_body_flag_overrides_other_flags(configured_petstore: str) -> None:
     assert r.exit_code == 0, f"Failed: {r.stderr}"
     data = json.loads(r.stdout)
     assert data["name"] == "BodyWins"
+
+
+def test_inflect_crash_on_unusual_schema_names() -> None:
+    from happi.spec.relations import infer_relations
+    from happi.spec.resources import extract_resources
+
+    spec: dict[str, object] = {
+        "openapi": "3.0.3",
+        "info": {"title": "EdgeCaseAPI", "version": "1.0"},
+        "paths": {
+            "/items": {
+                "get": {"summary": "List items", "responses": {"200": {"description": "OK"}}},
+            },
+        },
+        "components": {
+            "schemas": {
+                "": {
+                    "type": "object",
+                    "properties": {"item_id": {"type": "integer"}},
+                },
+                " ": {
+                    "type": "object",
+                    "properties": {"name": {"type": "string"}},
+                },
+                "-": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                },
+                "NormalSchema": {
+                    "type": "object",
+                    "properties": {"item_id": {"type": "integer"}},
+                },
+            }
+        },
+    }
+    resources = extract_resources(spec)
+    relations = infer_relations(spec, resources)
+    assert isinstance(relations, list)

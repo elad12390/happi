@@ -105,15 +105,20 @@ def _from_schemas(spec: dict[str, Any], resource_names: set[str]) -> list[Relati
 
 
 def _match_resource(name: str, resource_names: set[str]) -> str | None:
-    lowered = name.lower().replace("_", "-")
+    lowered = name.lower().replace("_", "-").strip()
+    if not lowered or not lowered.strip("-"):
+        return None
     if lowered in resource_names:
         return lowered
-    plural = str(_inflect_engine.plural_noun(cast("inflect.Word", lowered)))
-    if plural and plural in resource_names:
-        return plural
-    singular = _inflect_engine.singular_noun(cast("inflect.Word", lowered))
-    if singular:
-        re_plural = str(_inflect_engine.plural_noun(cast("inflect.Word", str(singular))))
-        if re_plural and re_plural in resource_names:
-            return re_plural
+    try:
+        plural = str(_inflect_engine.plural_noun(cast("inflect.Word", lowered)))
+        if plural and plural in resource_names:
+            return plural
+        singular = _inflect_engine.singular_noun(cast("inflect.Word", lowered))
+        if singular:
+            re_plural = str(_inflect_engine.plural_noun(cast("inflect.Word", str(singular))))
+            if re_plural and re_plural in resource_names:
+                return re_plural
+    except (IndexError, TypeError):
+        return None
     return None
