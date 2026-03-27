@@ -39,6 +39,7 @@ class Operation:
     args: list[Param] = field(default_factory=_param_list)
     flags: list[Param] = field(default_factory=_param_list)
     is_action: bool = False
+    content_type: str = ""
 
 
 @dataclass

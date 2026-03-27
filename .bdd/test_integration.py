@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING
 
 from interactions.cli_helpers import run_happi_in_env
@@ -606,3 +607,40 @@ def test_inflect_crash_on_unusual_schema_names() -> None:
     resources = extract_resources(spec)
     relations = infer_relations(spec, resources)
     assert isinstance(relations, list)
+
+
+def test_multipart_upload_sends_file(configured_petstore: str, tmp_path: Path) -> None:
+    test_file = tmp_path / "test.png"
+    test_file.write_bytes(b"\x89PNG\r\n\x1a\nFAKEDATA")
+    r = run_happi_in_env(
+        configured_petstore,
+        "testapi",
+        "pets",
+        "upload-image",
+        "1",
+        "--file",
+        f"@{test_file}",
+    )
+    assert r.exit_code == 0, f"Upload failed: {r.stderr}"
+    data = json.loads(r.stdout)
+    assert data["uploaded"] is True
+    assert data["content_type"] == "multipart/form-data"
+
+
+def test_multipart_upload_with_mixed_fields(configured_petstore: str, tmp_path: Path) -> None:
+    test_file = tmp_path / "cat.jpg"
+    test_file.write_bytes(b"\xff\xd8\xff\xe0JFIF")
+    r = run_happi_in_env(
+        configured_petstore,
+        "testapi",
+        "pets",
+        "upload-image",
+        "1",
+        "--file",
+        f"@{test_file}",
+        "--caption",
+        "cute cat",
+    )
+    assert r.exit_code == 0, f"Upload failed: {r.stderr}"
+    data = json.loads(r.stdout)
+    assert data["uploaded"] is True

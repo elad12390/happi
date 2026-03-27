@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -15,6 +15,8 @@ from happi.log import get_logger
 _log = get_logger("http.client")
 
 _BINARY_PREFIXES = ("audio/", "image/", "video/", "application/octet-stream", "application/pdf")
+
+QueryValue = str | int | float | bool | None
 
 
 class APIError(Exception):
@@ -36,8 +38,9 @@ def send_request(
     base_url: str,
     method: str,
     path: str,
-    query: dict[str, Any] | None = None,
+    query: dict[str, QueryValue] | None = None,
     body: object | None = None,
+    files: dict[str, tuple[str, bytes, str]] | None = None,
     auth: dict[str, str] | None = None,
     timeout: int = 30,
 ) -> object:
@@ -45,21 +48,34 @@ def send_request(
     headers = _build_auth_headers(auth)
     auth_query = _build_auth_query(auth)
 
-    merged_query: dict[str, Any] | None = None
+    merged_query: dict[str, QueryValue] | None = None
     if query or auth_query:
         merged_query = dict(query or {})
         merged_query.update(auth_query)
 
     _log.info("HTTP %s %s", method, url)
-    response = httpx.request(
-        method=method,
-        url=url,
-        params=merged_query,
-        json=body,
-        headers=headers if headers else None,
-        timeout=timeout,
-        follow_redirects=True,
-    )
+    if files:
+        data_fields = _multipart_data_from_body(body)
+        response = httpx.request(
+            method=method,
+            url=url,
+            params=merged_query,
+            files=files,
+            data=data_fields,
+            headers=headers if headers else None,
+            timeout=timeout,
+            follow_redirects=True,
+        )
+    else:
+        response = httpx.request(
+            method=method,
+            url=url,
+            params=merged_query,
+            json=body,
+            headers=headers if headers else None,
+            timeout=timeout,
+            follow_redirects=True,
+        )
     _log.debug("Response status: %s", response.status_code)
 
     if response.is_error:
@@ -154,3 +170,15 @@ def _build_auth_query(auth: dict[str, str] | None) -> dict[str, str]:
 
 def _join_url(base_url: str, path: str) -> str:
     return f"{base_url.rstrip('/')}/{path.lstrip('/')}"
+
+
+def _multipart_data_from_body(body: object | None) -> dict[str, str] | None:
+    if body is None:
+        return None
+    if not isinstance(body, dict):
+        return None
+    data: dict[str, str] = {}
+    typed_body = cast("dict[object, object]", body)
+    for key, value in typed_body.items():
+        data[str(key)] = str(value)
+    return data or None

@@ -53,6 +53,9 @@ def extract_resources(spec: dict[str, Any]) -> list[Resource]:
 
             args = _extract_path_args(path, operation)
             flags = _extract_query_flags(operation)
+            content_type = _detect_content_type(operation)
+            if content_type:
+                flags.extend(_extract_multipart_flags(operation))
 
             summary: str = cast("str", operation.get("summary", ""))
             description: str = cast("str", operation.get("description", ""))
@@ -65,6 +68,7 @@ def extract_resources(spec: dict[str, Any]) -> list[Resource]:
                 args=args,
                 flags=flags,
                 is_action=is_action,
+                content_type=content_type,
             )
 
             resource.operations.append(op)
@@ -350,6 +354,77 @@ def _extract_query_flags(operation: dict[str, Any]) -> list[Param]:
                 )
             )
     return flags
+
+
+def _detect_content_type(operation: dict[str, Any]) -> str:
+    request_body: object = operation.get("requestBody", {})
+    if not isinstance(request_body, dict):
+        return ""
+    typed_request_body = cast("dict[str, object]", request_body)
+    content: object = typed_request_body.get("content", {})
+    if not isinstance(content, dict):
+        return ""
+    typed_content = cast("dict[str, object]", content)
+    for content_type in typed_content:
+        lowered = str(content_type).lower()
+        if "multipart" in lowered or "octet-stream" in lowered:
+            return str(content_type)
+    return ""
+
+
+def _extract_multipart_flags(operation: dict[str, Any]) -> list[Param]:
+    request_body: object = operation.get("requestBody", {})
+    if not isinstance(request_body, dict):
+        return []
+    typed_request_body = cast("dict[str, object]", request_body)
+    content: object = typed_request_body.get("content", {})
+    if not isinstance(content, dict):
+        return []
+    typed_content = cast("dict[str, object]", content)
+
+    for content_type, content_value in typed_content.items():
+        lowered = str(content_type).lower()
+        if "multipart" not in lowered and "octet-stream" not in lowered:
+            continue
+        if not isinstance(content_value, dict):
+            continue
+        typed_content_value = cast("dict[str, object]", content_value)
+
+        raw_schema: object = typed_content_value.get("schema", {})
+        if not isinstance(raw_schema, dict):
+            continue
+        typed_schema = cast("dict[str, object]", raw_schema)
+        properties: object = typed_schema.get("properties", {})
+        if not isinstance(properties, dict):
+            continue
+        typed_properties = cast("dict[str, object]", properties)
+
+        required_names = _required_property_names(typed_schema)
+        flags: list[Param] = []
+        for name, prop in typed_properties.items():
+            if not isinstance(prop, dict):
+                continue
+            typed_prop = cast("dict[str, object]", prop)
+            flags.append(
+                Param(
+                    name=str(name),
+                    location="body",
+                    param_type=str(typed_prop.get("type", "string")),
+                    required=str(name) in required_names,
+                    description=str(typed_prop.get("description", "")),
+                )
+            )
+        return flags
+
+    return []
+
+
+def _required_property_names(schema: dict[str, object]) -> set[str]:
+    raw_required: object = schema.get("required", [])
+    if not isinstance(raw_required, list):
+        return set()
+    typed_required = cast("list[object]", raw_required)
+    return {item for item in typed_required if isinstance(item, str)}
 
 
 def _schema_type(schema: object) -> str:

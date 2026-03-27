@@ -11,7 +11,7 @@ _PETS: dict[str, dict[str, Any]] = {
     "3": {"id": 3, "name": "Luna", "status": "pending"},
 }
 
-_NEXT_ID = 4
+_next_id = 4
 
 SPEC: dict[str, Any] = {
     "openapi": "3.0.3",
@@ -89,6 +89,30 @@ SPEC: dict[str, Any] = {
                 "responses": {"200": {"description": "OK"}},
             },
         },
+        "/pets/{petId}/upload-image": {
+            "post": {
+                "operationId": "uploadPetImage",
+                "tags": ["pet"],
+                "summary": "Upload an image for a pet",
+                "parameters": [
+                    {"name": "petId", "in": "path", "required": True, "schema": {"type": "string"}},
+                ],
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {"type": "string", "format": "binary"},
+                                    "caption": {"type": "string"},
+                                },
+                            }
+                        }
+                    }
+                },
+                "responses": {"200": {"description": "OK"}},
+            },
+        },
         "/pets/{petId}/photo": {
             "get": {
                 "operationId": "getPetPhoto",
@@ -131,6 +155,22 @@ class PetstoreHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         if self.require_auth and not self._check_auth():
             return
+        if "/upload-image" in self.path:
+            content_type = self.headers.get("Content-Type", "")
+            length = int(self.headers.get("Content-Length", 0))
+            raw = self.rfile.read(length) if length > 0 else b""
+            pet_id = self.path.split("/")[2]
+            has_file = b"Content-Disposition" in raw and b"filename" in raw
+            self._json_response(
+                200,
+                {
+                    "pet_id": pet_id,
+                    "uploaded": has_file,
+                    "content_type": content_type.split(";")[0].strip(),
+                    "size": length,
+                },
+            )
+            return
         body = self._read_body()
         if "/activate" in self.path:
             pet_id = self.path.split("/")[2]
@@ -142,14 +182,14 @@ class PetstoreHandler(BaseHTTPRequestHandler):
                 self._json_response(404, {"message": "Pet not found"})
             return
         if self.path.rstrip("/") == "/pets":
-            global _NEXT_ID
+            global _next_id
             new_pet = {
-                "id": _NEXT_ID,
+                "id": _next_id,
                 "name": body.get("name", ""),
                 "status": body.get("status", "available"),
             }
-            _PETS[str(_NEXT_ID)] = new_pet
-            _NEXT_ID += 1
+            _PETS[str(_next_id)] = new_pet
+            _next_id += 1
             self._json_response(201, new_pet)
             return
         self._json_response(404, {"message": "Not found"})
@@ -218,7 +258,8 @@ def start_test_server() -> tuple[HTTPServer, str]:
     server = HTTPServer(("127.0.0.1", 0), PetstoreHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    host, port = server.server_address
+    host = str(server.server_address[0])
+    port = int(server.server_address[1])
     base_url = f"http://{host}:{port}"
     SPEC["servers"][0]["url"] = base_url
     return server, base_url

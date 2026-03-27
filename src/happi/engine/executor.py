@@ -4,7 +4,8 @@ import json
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 from happi.display.basic import (
     extract_primary_id,
@@ -118,6 +119,19 @@ def _dispatch(
     _log.debug("Resolved path: %s", path)
     _log.debug("Query: %s", query)
     _log.debug("Body: %s", explicit_body)
+
+    if _is_multipart_operation(ctx.operation.content_type):
+        files, text_fields = _split_multipart_fields(explicit_body)
+        return send_request(
+            base_url=ctx.base_url,
+            method=ctx.operation.http_method,
+            path=path,
+            query=query if query else None,
+            body=text_fields,
+            files=files if files else None,
+            auth=ctx.auth,
+        )
+
     return send_request(
         base_url=ctx.base_url,
         method=ctx.operation.http_method,
@@ -299,3 +313,53 @@ def _parse_extra_flags(extras: list[str]) -> dict[str, Any]:
         else:
             result[key] = values
     return result
+
+
+def _is_multipart_operation(content_type: str) -> bool:
+    lowered = content_type.lower()
+    return "multipart" in lowered or "octet-stream" in lowered
+
+
+def _split_multipart_fields(
+    body: object,
+) -> tuple[dict[str, tuple[str, bytes, str]], dict[str, str] | None]:
+    if not isinstance(body, dict):
+        return {}, None
+
+    files: dict[str, tuple[str, bytes, str]] = {}
+    text_fields: dict[str, str] = {}
+    typed_body = cast("dict[object, object]", body)
+    for key, value in typed_body.items():
+        field_name = str(key)
+        string_value = str(value)
+        if string_value.startswith("@"):
+            file_path = Path(string_value[1:])
+            if not file_path.exists() or not file_path.is_file():
+                raise ValueError(f"File not found: {file_path}")
+            files[field_name] = (
+                file_path.name,
+                file_path.read_bytes(),
+                _guess_mime(file_path.name),
+            )
+        else:
+            text_fields[field_name] = string_value
+
+    return files, (text_fields if text_fields else None)
+
+
+def _guess_mime(filename: str) -> str:
+    ext = Path(filename).suffix.lower()
+    mapping = {
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".png": "image/png",
+        ".gif": "image/gif",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+        ".mp3": "audio/mpeg",
+        ".wav": "audio/wav",
+        ".ogg": "audio/ogg",
+        ".mp4": "video/mp4",
+        ".pdf": "application/pdf",
+    }
+    return mapping.get(ext, "application/octet-stream")
